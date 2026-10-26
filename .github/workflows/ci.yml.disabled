@@ -1,0 +1,18 @@
+name: reliability-ci
+on: [push, pull_request]
+jobs:
+  test-and-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Unit tests
+        run: PYTHONPATH=src:evals python -m pytest -q --cov=src/reliability
+      - name: Evaluation suite
+        run: PYTHONPATH=src python evals/run_eval.py
+      - name: Regression gate (fails on a drop of 3 points or more)
+        run: PYTHONPATH=src python -m reliability.gate evals/results.json evals/baseline.json
