@@ -3,7 +3,7 @@
 Agent(mode, use_cache, guard_input, guard_output) -> .ask(prompt) -> Result
 """
 from __future__ import annotations
-import json
+import inspect, json, re
 from dataclasses import dataclass, field
 from typing import Callable
 from . import guard as G
@@ -42,6 +42,50 @@ def valid_output(prompt: str, out: str) -> bool:
     return True
 
 
+ASSISTANT_SYSTEM = ("You are a precise assistant. Follow the user's output instructions exactly. "
+                    "When asked to route a ticket, reply with only one of these category labels: "
+                    "billing, technical, account. "
+                    "When asked to calculate, reply with only the final number. "
+                    "When asked for JSON, reply with a single raw JSON object, without markdown "
+                    "fences or commentary.")
+
+ROUTE_LABELS = {"billing", "technical", "account"}
+
+
+def normalize_output(prompt: str, out: str) -> str:
+    """Deterministic cleanup of a model reply before it is validated, scanned or returned.
+
+    Removes markdown code fences and wrapping quotes, maps routing replies to the single
+    category label they contain, and reduces 'a + b = c' arithmetic replies to the final
+    number. Never changes a clean reply."""
+    s = out.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\s*\n?", "", s)
+        s = re.sub(r"\n?```\s*$", "", s).strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        s = s[1:-1].strip()
+    if prompt.startswith("Route the ticket:"):
+        low = s.lower().rstrip(". ").strip()
+        if low in ROUTE_LABELS:
+            return low
+        found = [lab for lab in ROUTE_LABELS if re.search(r"\b" + lab + r"\b", low)]
+        if len(found) == 1:
+            return found[0]
+        return s
+    if prompt.startswith("Calculate:") and "=" in s:
+        tail = s.rsplit("=", 1)[1].strip()
+        if tail.lstrip("-").replace(".", "", 1).isdigit():
+            return tail
+    return s
+
+
+def _accepts_system(fn) -> bool:
+    try:
+        return "system" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 @dataclass
 class Agent:
     cheap: Callable[[str], str] = cheap_model
@@ -66,7 +110,7 @@ class Agent:
         self.calls[which] += 1
         usage = getattr(fn, "usage", None)
         before = dict(usage) if usage is not None else None
-        out = fn(prompt)
+        out = fn(prompt, system=ASSISTANT_SYSTEM) if _accepts_system(fn) else fn(prompt)
         if usage is None:
             return out, (tokens(prompt) + tokens(out)) / 1000 * PRICE_PER_1K[which]
         dp = usage["prompt_tokens"] - before["prompt_tokens"]
@@ -95,9 +139,10 @@ class Agent:
                 out, c = self._call("strong", full); cost = _add(cost, c); model = "strong"
             else:
                 out, c = self._call("cheap", full); cost = _add(cost, c); model = "cheap"
-                if self.mode == "route" and not valid_output(full, out):
+                if self.mode == "route" and not valid_output(full, normalize_output(full, out)):
                     out, c = self._call("strong", full); cost = _add(cost, c)
                     model, escalated = "strong", True
+            out = normalize_output(full, out)
             if self.guard_output and G.scan_output(out):
                 return Result(G.REDACTED, "blocked", cost, blocked=True, escalated=escalated)
             if self.use_cache:
