@@ -20,7 +20,7 @@ This is a **rebuild**. The original project was lost, so this version was writte
 | Real LLMs (any OpenAI-compatible endpoint, e.g. local Ollama) | Adapter and `evals/run_eval_llm.py` written, **tested only against a fake HTTP server**. **Never run against a real model**, so this repo has **no real-model results**. |
 | LLM-as-a-judge | Written, tested with fake judges only |
 | Langfuse tracing | Runs with the real library and fake keys without crashing. **Never checked against a real Langfuse server.** |
-| GitHub Actions workflow | Written. Its commands were run locally; it has **never run on GitHub**. |
+| GitHub Actions workflow | Enabled 9 Nov 2026. Run #1 passed on GitHub: unit tests, offline eval and regression gate. |
 
 The demo numbers are **not** evidence about LLM quality:
 
@@ -119,7 +119,7 @@ tests/            32 tests
 
 | Tested here | Not tested |
 | --- | --- |
-| 32 unit tests, 97% line coverage | Any real LLM, local or hosted |
+| 32 unit tests, 95% line coverage | Any real LLM, local or hosted |
 | Adapter, routing, usage and cost accounting, call budget, judge, injection wrapping against fake HTTP servers | Real Langfuse server or dashboard |
 | `run_eval_llm.py` end to end against a local fake server, including the call limit | GitHub Actions on GitHub |
 | Gate exit codes, including a simulated 5-point regression | Accuracy of the injection guard against real attacks |
